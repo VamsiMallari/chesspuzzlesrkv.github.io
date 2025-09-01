@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Puzzle Master</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <style>
+        .chess-board {
+            display: grid;
+            grid-template-columns: repeat(8, 60px);
+            grid-template-rows: repeat(8, 60px);
+            border: 4px solid #374151;
+        }
+        .chess-square {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .chess-square:hover {
+            transform: scale(1.05);
+        }
+        .light-square {
+            background-color: #f0d9b5;
+        }
+        .dark-square {
+            background-color: #b58863;
+        }
+        .selected {
+            box-shadow: inset 0 0 0 3px #22c55e;
+        }
+        .possible-move::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background-color: #22c55e;
+            border-radius: 50%;
+            opacity: 0.8;
+            z-index: 10;
+        }
+        .possible-capture::after {
+            content: '';
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border: 4px solid #22c55e;
+            border-radius: 50%;
+            opacity: 0.8;
+            z-index: 10;
+        }
+        .possible-move:hover::after {
+            background-color: #16a34a;
+        }
+        .possible-capture:hover::after {
+            border-color: #16a34a;
+        }
+        .last-move {
+            background-color: #fbbf24 !important;
+        }
+        .tab-active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .puzzle-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .puzzle-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .success-animation {
+            animation: successPulse 0.6s ease-in-out;
+        }
+        @keyframes successPulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .rank-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin: 2px;
+        }
+        .rank-grandmaster { background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; }
+        .rank-master { background: linear-gradient(45deg, #c0c0c0, #e5e5e5); color: #000; }
+        .rank-expert { background: linear-gradient(45deg, #cd7f32, #daa520); color: #fff; }
+        .rank-advanced { background: linear-gradient(45deg, #4f46e5, #7c3aed); color: #fff; }
+        .rank-intermediate { background: linear-gradient(45deg, #059669, #10b981); color: #fff; }
+        .rank-beginner { background: linear-gradient(45deg, #dc2626, #ef4444); color: #fff; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-50 to-purple-50 min-h-screen">
+    
+    <!-- Authentication Modal -->
+    <div id="auth-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4">
+            <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">♔ Chess Puzzle Master ♛</h2>
+            
+            <!-- Login Form -->
+            <div id="login-form">
+                <h3 class="text-xl font-semibold text-gray-700 mb-4">Login</h3>
+                <form onsubmit="handleLogin(event)" class="space-y-4">
+                    <input type="email" id="login-email" placeholder="Email" required 
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <div class="relative">
+                        <input type="password" id="login-password" placeholder="Password" required 
+                               class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <button type="button" onclick="togglePassword('login-password')" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                            👁️
+                        </button>
+                    </div>
+                    <button type="submit" class="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors">
+                        Login
+                    </button>
+                </form>
+                <p class="text-center mt-4 text-gray-600">
+                    Don't have an account? 
+                    <button onclick="showRegister()" class="text-blue-600 hover:underline">Register</button>
+                </p>
+            </div>
+
+            <!-- Registration Form -->
+            <div id="register-form" class="hidden">
+                <h3 class="text-xl font-semibold text-gray-700 mb-4">Register</h3>
+                <form onsubmit="handleRegister(event)" class="space-y-4">
+                    <input type="text" id="register-name" placeholder="Full Name" required 
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <input type="email" id="register-email" placeholder="Email" required 
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <div class="relative">
+                        <input type="password" id="register-password" placeholder="Password (min 6 characters)" required minlength="6"
+                               class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <button type="button" onclick="togglePassword('register-password')" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                            👁️
+                        </button>
+                    </div>
+                    <button type="submit" class="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors">
+                        Register
+                    </button>
+                </form>
+                <p class="text-center mt-4 text-gray-600">
+                    Already have an account? 
+                    <button onclick="showLogin()" class="text-blue-600 hover:underline">Login</button>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="main-app" class="hidden">
+        <!-- Header -->
+        <header class="bg-white shadow-lg">
+            <div class="max-w-7xl mx-auto px-4 py-6 flex justify-between items-center">
+                <div>
+                    <h1 class="text-4xl font-bold text-gray-800">♔ Chess Puzzle Master ♛</h1>
+                    <p class="text-gray-600 mt-2">Solve, Create, and Manage Chess Puzzles</p>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-gray-700">Welcome, <span id="user-name" class="font-medium"></span></span>
+                    <button onclick="logout()" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
+                        Logout
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="max-w-7xl mx-auto px-4 mt-6">
+            <div class="flex space-x-1 bg-white rounded-lg p-1 shadow-md">
+                <button onclick="showTab('solve')" id="solve-tab" class="tab-active flex-1 py-3 px-6 rounded-md font-medium transition-all">
+                    🧩 Solve Puzzles
+                </button>
+                <button onclick="showTab('dashboard')" id="dashboard-tab" class="flex-1 py-3 px-6 rounded-md font-medium transition-all hover:bg-gray-100">
+                    📊 Dashboard
+                </button>
+                <button onclick="showTab('create')" id="create-tab" class="flex-1 py-3 px-6 rounded-md font-medium transition-all hover:bg-gray-100">
+                    ➕ Create Puzzle
+                </button>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 py-8">
+            
+            <!-- Solve Puzzles Tab -->
+            <div id="solve-content" class="tab-content">
+                <div class="flex flex-col items-center space-y-8">
+                    <!-- Puzzle Title and Controls -->
+                    <div class="w-full max-w-4xl">
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <h2 class="text-2xl font-bold text-gray-800" id="puzzle-title">Select a puzzle to start</h2>
+                                <div class="flex space-x-2">
+                                    <button onclick="resetPuzzle()" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors">
+                                        🔄 Reset
+                                    </button>
+                                    <button onclick="startSolving()" id="solve-btn" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">
+                                        🎯 Solve
+                                    </button>
+                                    <button onclick="submitSolution()" id="submit-btn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors hidden">
+                                        ✅ Submit
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-gray-700" id="puzzle-description">Select a puzzle from the dashboard to begin solving.</p>
+                        </div>
+                    </div>
+
+                    <!-- Chess Board Container -->
+                    <div class="flex justify-center">
+                        <div class="bg-white rounded-xl shadow-2xl p-8 inline-block">
+                            <div class="chess-board mx-auto" id="chess-board">
+                                <!-- Chess board will be generated here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Game Info -->
+                    <div class="w-full max-w-4xl">
+                        <div class="grid md:grid-cols-3 gap-6">
+                            <!-- Game Status -->
+                            <div class="bg-white rounded-xl shadow-lg p-6 text-center">
+                                <div class="text-lg font-semibold text-gray-800 mb-2">Game Status</div>
+                                <div class="text-blue-600 font-medium" id="game-status">Ready</div>
+                                <div class="text-sm text-gray-600 mt-2">
+                                    Move: <span id="move-counter" class="font-medium">-</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Timer -->
+                            <div class="bg-white rounded-xl shadow-lg p-6 text-center">
+                                <div class="text-lg font-semibold text-gray-800 mb-2">Time</div>
+                                <div class="text-2xl font-bold text-green-600" id="timer">00:00</div>
+                            </div>
+                            
+                            <!-- Puzzle Info -->
+                            <div class="bg-white rounded-xl shadow-lg p-6">
+                                <div class="text-lg font-semibold text-gray-800 mb-2">Puzzle Info</div>
+                                <div class="space-y-1 text-sm" id="puzzle-info">
+                                    <p class="text-gray-500 italic">No puzzle selected</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Move History and Rankings -->
+                    <div class="w-full max-w-4xl">
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <!-- Move History -->
+                            <div class="bg-white rounded-xl shadow-lg p-6">
+                                <h3 class="text-xl font-bold text-gray-800 mb-4">Move History</h3>
+                                <div class="bg-gray-50 rounded-lg p-4 min-h-[120px]">
+                                    <div id="move-history" class="text-sm text-gray-700 space-y-1">
+                                        <p class="text-gray-500 italic">No moves yet...</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Rankings -->
+                            <div class="bg-white rounded-xl shadow-lg p-6" id="rankings-section" style="display: none;">
+                                <h3 class="text-xl font-bold text-gray-800 mb-4">Your Rank</h3>
+                                <div id="user-rank" class="text-center">
+                                    <!-- Rank will be displayed here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Tab -->
+            <div id="dashboard-content" class="tab-content hidden">
+                <div class="grid md:grid-cols-3 gap-6 mb-8">
+                    <!-- Stats Cards -->
+                    <div class="bg-white rounded-xl shadow-lg p-6 text-center">
+                        <div class="text-3xl font-bold text-blue-600" id="total-puzzles">0</div>
+                        <div class="text-gray-600 mt-1">Total Puzzles</div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-lg p-6 text-center">
+                        <div class="text-3xl font-bold text-green-600" id="solved-puzzles">0</div>
+                        <div class="text-gray-600 mt-1">Solved</div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-lg p-6 text-center">
+                        <div class="text-3xl font-bold text-orange-600" id="success-rate">0%</div>
+                        <div class="text-gray-600 mt-1">Success Rate</div>
+                    </div>
+                </div>
+
+                <!-- Puzzle Collection -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800">Puzzle Collection</h2>
+                        <div class="flex space-x-2">
+                            <select id="theme-filter" class="px-4 py-2 border border-gray-300 rounded-lg">
+                                <option value="">All Themes</option>
+                                <option value="Mate in 1">Mate in 1</option>
+                                <option value="Mate in 2">Mate in 2</option>
+                                <option value="Mate in 3">Mate in 3</option>
+                                <option value="Tactics">Tactics</option>
+                            </select>
+                            <button onclick="loadPuzzles()" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                                🔄 Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4" id="puzzle-grid">
+                        <div class="text-center py-8 text-gray-500">Loading puzzles...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Create Puzzle Tab -->
+            <div id="create-content" class="tab-content hidden">
+                <!-- Admin Password Check -->
+                <div id="admin-check" class="bg-white rounded-xl shadow-lg p-6 mb-8">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">Admin Access Required</h2>
+                    <div class="flex space-x-4">
+                        <div class="relative flex-1">
+                            <input type="password" id="admin-password" placeholder="Enter admin password" 
+                                   class="w-full px-4 py-2 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <button type="button" onclick="togglePassword('admin-password')" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                                👁️
+                            </button>
+                        </div>
+                        <button onclick="checkAdminPassword()" class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                            Verify
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Puzzle Creation Form (Hidden initially) -->
+                <div id="create-form" class="hidden">
+                    <div class="grid lg:grid-cols-2 gap-8">
+                        <!-- Puzzle Creation Form -->
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <h2 class="text-2xl font-bold text-gray-800 mb-6">Create New Puzzle</h2>
+                            
+                            <form id="puzzle-form" class="space-y-6">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Puzzle Title</label>
+                                    <input type="text" id="new-title" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="e.g., Mate in 2 - Fischer Style">
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                                    <textarea id="new-description" rows="3" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Describe the puzzle objective..."></textarea>
+                                </div>
+
+                                <div class="grid md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">Theme</label>
+                                        <select id="new-theme" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                            <option>Mate in 1</option>
+                                            <option>Mate in 2</option>
+                                            <option>Mate in 3</option>
+                                            <option>Tactics</option>
+                                            <option>Endgame</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">Difficulty</label>
+                                        <select id="new-difficulty" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                            <option>★☆☆☆☆ Beginner</option>
+                                            <option>★★☆☆☆ Easy</option>
+                                            <option>★★★☆☆ Medium</option>
+                                            <option>★★★★☆ Hard</option>
+                                            <option>★★★★★ Expert</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Chess Position (FEN Format)
+                                        <span class="text-xs text-gray-500 block mt-1">
+                                            FEN = Forsyth-Edwards Notation - A standard way to describe chess positions. 
+                                            It shows where each piece is placed on the board.
+                                        </span>
+                                    </label>
+                                    <input type="text" id="new-fen" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1">
+                                    <div class="text-xs text-gray-500 mt-1">
+                                        Example: "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4"
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Solution Moves</label>
+                                    <input type="text" id="new-solution" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="e.g., Qh5+ Kg8 Qh8#">
+                                </div>
+
+                                <div class="flex space-x-4">
+                                    <button type="button" onclick="previewPuzzle()" class="flex-1 py-3 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors">
+                                        👁️ Preview
+                                    </button>
+                                    <button type="button" onclick="savePuzzle()" class="flex-1 py-3 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600 transition-colors">
+                                        💾 Save Puzzle
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Preview Board -->
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <h3 class="text-xl font-bold text-gray-800 mb-4">Preview</h3>
+                            <div class="chess-board" id="preview-board">
+                                <!-- Preview board will be generated here -->
+                            </div>
+                            <div class="mt-4">
+                                <div id="preview-info" class="text-gray-600">
+                                    <p>Set up your puzzle and click Preview to see it here.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCuSurKpIMGQv8-yu4txJE_8_KZk5lSJ3w",
+            authDomain: "chess-puzzels-rkv.firebaseapp.com",
+            projectId: "chess-puzzels-rkv",
+            storageBucket: "chess-puzzels-rkv.firebasestorage.app",
+            messagingSenderId: "130806565295",
+            appId: "1:130806565295:web:6f09088b2072e815ecc75a",
+            measurementId: "G-87H1RF04D7"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        // Chess piece symbols
+        const pieces = {
+            'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
+            'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟'
+        };
+
+        // Game state
+        let currentBoard = [];
+        let selectedSquare = null;
+        let gameState = 'ready';
+        let moveCount = 1;
+        let moveHistory = [];
+        let currentPuzzle = null;
+        let currentUser = null;
+        let startTime = null;
+        let timerInterval = null;
+        let canMove = false;
+
+        // Authentication functions
+        function togglePassword(inputId) {
+            const input = document.getElementById(inputId);
+            const button = input.nextElementSibling;
+            
+            if (input.type === 'password') {
+                input.type = 'text';
+                button.textContent = '🙈';
+            } else {
+                input.type = 'password';
+                button.textContent = '👁️';
+            }
+        }
+
+        function showLogin() {
+            document.getElementById('login-form').classList.remove('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+        }
+
+        function showRegister() {
+            document.getElementById('login-form').classList.add('hidden');
+            document.getElementById('register-form').classList.remove('hidden');
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+
+            try {
+                const userCredential = await auth.signInWithEmailAndPassword(email, password);
+                currentUser = userCredential.user;
+                await loadUserData();
+                showMainApp();
+            } catch (error) {
+                alert('Login failed: ' + error.message);
+            }
+        }
+
+        async function handleRegister(event) {
+            event.preventDefault();
+            const name = document.getElementById('register-name').value;
+            const email = document.getElementById('register-email').value;
+            const password = document.getElementById('register-password').value;
+
+            try {
+                const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+                currentUser = userCredential.user;
+                
+                // Save user data to Firestore
+                await db.collection('users').doc(currentUser.uid).set({
+                    name: name,
+                    email: email,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    solvedPuzzles: 0,
+                    totalTime: 0,
+                    rank: 'Beginner'
+                });
+
+                await loadUserData();
+                showMainApp();
+            } catch (error) {
+                alert('Registration failed: ' + error.message);
+            }
+        }
+
+        async function loadUserData() {
+            if (currentUser) {
+                const userDoc = await db.collection('users').doc(currentUser.uid).get();
+                if (userDoc.exists) {
+                    const userData = userDoc.data();
+                    document.getElementById('user-name').textContent = userData.name;
+                }
+            }
+        }
+
+        function showMainApp() {
+            document.getElementById('auth-modal').classList.add('hidden');
+            document.getElementById('main-app').classList.remove('hidden');
+            loadPuzzles();
+        }
+
+        function logout() {
+            auth.signOut().then(() => {
+                document.getElementById('auth-modal').classList.remove('hidden');
+                document.getElementById('main-app').classList.add('hidden');
+                currentUser = null;
+            });
+        }
+
+        // Tab management
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            
+            document.querySelectorAll('[id$="-tab"]').forEach(tab => {
+                tab.classList.remove('tab-active');
+                tab.classList.add('hover:bg-gray-100');
+            });
+            
+            document.getElementById(tabName + '-content').classList.remove('hidden');
+            
+            const activeTab = document.getElementById(tabName + '-tab');
+            activeTab.classList.add('tab-active');
+            activeTab.classList.remove('hover:bg-gray-100');
+        }
+
+        // Chess board creation with proper 8x8 grid
+        function createBoard(containerId, fen = null) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            
+            const board = [];
+            
+            // Initialize empty board
+            for (let rank = 0; rank < 8; rank++) {
+                board[rank] = [];
+                for (let file = 0; file < 8; file++) {
+                    board[rank][file] = '';
+                }
+            }
+            
+            // Parse FEN if provided
+            if (fen) {
+                const fenParts = fen.split(' ');
+                const position = fenParts[0];
+                const ranks = position.split('/');
+                
+                for (let rank = 0; rank < 8; rank++) {
+                    let file = 0;
+                    for (let char of ranks[rank]) {
+                        if (isNaN(char)) {
+                            board[rank][file] = char;
+                            file++;
+                        } else {
+                            file += parseInt(char);
+                        }
+                    }
+                }
+            }
+            
+            // Create visual board
+            for (let rank = 0; rank < 8; rank++) {
+                for (let file = 0; file < 8; file++) {
+                    const square = document.createElement('div');
+                    square.className = `chess-square ${(rank + file) % 2 === 0 ? 'light-square' : 'dark-square'}`;
+                    square.dataset.rank = rank;
+                    square.dataset.file = file;
+                    
+                    if (board[rank][file]) {
+                        square.textContent = pieces[board[rank][file]];
+                    }
+                    
+                    if (containerId === 'chess-board') {
+                        square.addEventListener('click', () => handleSquareClick(rank, file));
+                    }
+                    
+                    container.appendChild(square);
+                }
+            }
+            
+            return board;
+        }
+
+        // Load puzzles from Firebase
+        async function loadPuzzles() {
+            try {
+                const puzzlesSnapshot = await db.collection('puzzles').orderBy('createdAt', 'desc').get();
+                const puzzles = [];
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                
+                puzzlesSnapshot.forEach(doc => {
+                    const puzzleData = { 
+                        id: doc.id, 
+                        title: doc.id, // Use document ID as title
+                        ...doc.data() 
+                    };
+                    puzzles.push(puzzleData);
+                });
+
+                displayPuzzles(puzzles);
+                updateStats(puzzles);
+                
+                // Auto-load today's puzzle in solve section
+                const todaysPuzzle = puzzles.find(puzzle => {
+                    if (puzzle.createdAt && puzzle.createdAt.toDate) {
+                        const puzzleDate = puzzle.createdAt.toDate();
+                        puzzleDate.setHours(0, 0, 0, 0);
+                        return puzzleDate.getTime() === today.getTime();
+                    }
+                    return false;
+                });
+                
+                if (todaysPuzzle && !currentPuzzle) {
+                    loadPuzzle(todaysPuzzle);
+                }
+            } catch (error) {
+                console.error('Error loading puzzles:', error);
+                document.getElementById('puzzle-grid').innerHTML = '<div class="text-center py-8 text-red-500">Error loading puzzles</div>';
+            }
+        }
+
+        async function displayPuzzles(puzzles) {
+            const grid = document.getElementById('puzzle-grid');
+            grid.innerHTML = '';
+            
+            if (puzzles.length === 0) {
+                grid.innerHTML = '<div class="text-center py-8 text-gray-500">No puzzles found</div>';
+                return;
+            }
+
+            for (const puzzle of puzzles) {
+                // Check if user has already solved this puzzle
+                const userSolution = await checkUserSolution(puzzle.id);
+                const isSolved = userSolution !== null;
+                
+                const card = document.createElement('div');
+                card.className = `puzzle-card bg-gray-50 rounded-lg p-4 cursor-pointer hover:bg-gray-100 transition-colors ${isSolved ? 'opacity-60' : ''}`;
+                card.onclick = () => {
+                    if (isSolved) {
+                        alert('You have already solved this puzzle!');
+                        return;
+                    }
+                    showTab('solve');
+                    loadPuzzle(puzzle);
+                };
+                
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <h3 class="font-medium text-gray-800 text-sm">${puzzle.title || 'Untitled'}</h3>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-xs text-gray-500">${puzzle.difficulty || 'N/A'}</span>
+                            ${isSolved ? '<span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">✓ Solved</span>' : ''}
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-600 mb-3">${puzzle.description || 'No description'}</p>
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">${puzzle.theme || 'General'}</span>
+                        <span class="text-xs text-gray-500">${puzzle.rating || 'Unrated'}</span>
+                    </div>
+                `;
+                
+                grid.appendChild(card);
+            }
+        }
+
+        async function checkUserSolution(puzzleId) {
+            if (!currentUser) return null;
+            
+            try {
+                const solutionQuery = await db.collection('solutions')
+                    .where('userId', '==', currentUser.uid)
+                    .where('puzzleId', '==', puzzleId)
+                    .get();
+                
+                return solutionQuery.empty ? null : solutionQuery.docs[0].data();
+            } catch (error) {
+                console.error('Error checking user solution:', error);
+                return null;
+            }
+        }
+
+        function updateStats(puzzles) {
+            document.getElementById('total-puzzles').textContent = puzzles.length;
+            // You can add more stats logic here based on user's solved puzzles
+        }
+
+        // Load a puzzle
+        async function loadPuzzle(puzzle) {
+            // Check if user has already solved this puzzle
+            const userSolution = await checkUserSolution(puzzle.id);
+            if (userSolution) {
+                alert('You have already solved this puzzle!');
+                return;
+            }
+            
+            currentPuzzle = puzzle;
+            
+            // Get puzzle position from database using puzzle title as document ID
+            let puzzlePosition = null;
+            try {
+                const puzzleDoc = await db.collection('puzzles').doc(puzzle.title).get();
+                if (puzzleDoc.exists) {
+                    puzzlePosition = puzzleDoc.data().position;
+                }
+            } catch (error) {
+                console.error('Error loading puzzle position:', error);
+            }
+            
+            // Handle different position formats from database
+            let fenString = null;
+            if (puzzlePosition) {
+                if (typeof puzzlePosition === 'string') {
+                    fenString = puzzlePosition;
+                } else if (typeof puzzlePosition === 'object') {
+                    // If position is stored as JSON object, try to extract FEN
+                    fenString = puzzlePosition.fen || puzzlePosition.position || JSON.stringify(puzzlePosition);
+                }
+            } else if (puzzle.fen) {
+                // Fallback to puzzle.fen if available
+                fenString = typeof puzzle.fen === 'string' ? puzzle.fen : puzzle.fen.position || puzzle.fen.fen;
+            }
+            
+            // Default to starting position if no valid position found
+            if (!fenString || typeof fenString !== 'string') {
+                console.warn('No valid position found for puzzle, using starting position');
+                fenString = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+            }
+            
+            currentBoard = createBoard('chess-board', fenString);
+            
+            document.getElementById('puzzle-title').textContent = puzzle.title || 'Untitled Puzzle';
+            document.getElementById('puzzle-description').textContent = puzzle.description || 'No description available';
+            document.getElementById('move-counter').textContent = '-';
+            document.getElementById('game-status').textContent = 'Ready to solve';
+            document.getElementById('timer').textContent = '00:00';
+            document.getElementById('move-history').innerHTML = '<p class="text-gray-500 italic">Click Solve to begin...</p>';
+            
+            // Update puzzle info
+            const infoDiv = document.getElementById('puzzle-info');
+            infoDiv.innerHTML = `
+                <div class="text-gray-600">Theme: <span class="font-medium text-gray-800">${puzzle.theme || 'General'}</span></div>
+                <div class="text-gray-600">Difficulty: <span class="font-medium text-gray-800">${puzzle.difficulty || 'N/A'}</span></div>
+                <div class="text-gray-600">Rating: <span class="font-medium text-gray-800">${puzzle.rating || 'Unrated'}</span></div>
+            `;
+            
+            gameState = 'ready';
+            moveCount = 1;
+            moveHistory = [];
+            selectedSquare = null;
+            canMove = false;
+            
+            document.getElementById('solve-btn').classList.remove('hidden');
+            document.getElementById('submit-btn').classList.add('hidden');
+            document.getElementById('rankings-section').style.display = 'none';
+        }
+
+        // Start solving
+        function startSolving() {
+            if (!currentPuzzle) return;
+            
+            canMove = true;
+            gameState = 'playing';
+            startTime = Date.now();
+            
+            document.getElementById('game-status').textContent = 'Your turn';
+            document.getElementById('solve-btn').classList.add('hidden');
+            document.getElementById('submit-btn').classList.remove('hidden');
+            document.getElementById('move-history').innerHTML = '<p class="text-gray-500 italic">Make your first move...</p>';
+            
+            // Start timer
+            timerInterval = setInterval(updateTimer, 1000);
+        }
+
+        function updateTimer() {
+            if (startTime) {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                document.getElementById('timer').textContent = 
+                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }
+
+        // Handle square clicks with full chess rules
+        function handleSquareClick(rank, file) {
+            if (!canMove || gameState !== 'playing') return;
+            
+            const square = document.querySelector(`[data-rank="${rank}"][data-file="${file}"]`);
+            
+            if (selectedSquare) {
+                const fromRank = selectedSquare.rank;
+                const fromFile = selectedSquare.file;
+                
+                if (isValidMove(fromRank, fromFile, rank, file)) {
+                    makeMove(fromRank, fromFile, rank, file);
+                    clearHighlights();
+                    selectedSquare = null;
+                } else {
+                    clearHighlights();
+                    if (currentBoard[rank][file] && isPlayerPiece(currentBoard[rank][file])) {
+                        selectSquare(rank, file);
+                    } else {
+                        selectedSquare = null;
+                    }
+                }
+            } else {
+                if (currentBoard[rank][file] && isPlayerPiece(currentBoard[rank][file])) {
+                    selectSquare(rank, file);
+                }
+            }
+        }
+
+        function isPlayerPiece(piece) {
+            // Assuming white to move (uppercase pieces)
+            return piece === piece.toUpperCase();
+        }
+
+        function selectSquare(rank, file) {
+            selectedSquare = { rank, file };
+            const square = document.querySelector(`[data-rank="${rank}"][data-file="${file}"]`);
+            square.classList.add('selected');
+            
+            highlightPossibleMoves(rank, file);
+        }
+
+        function clearHighlights() {
+            document.querySelectorAll('.chess-square').forEach(square => {
+                square.classList.remove('selected', 'possible-move', 'possible-capture', 'last-move');
+            });
+        }
+
+        function highlightPossibleMoves(rank, file) {
+            const piece = currentBoard[rank][file];
+            const moves = getValidMoves(rank, file, piece);
+            
+            moves.forEach(([r, f]) => {
+                const square = document.querySelector(`[data-rank="${r}"][data-file="${f}"]`);
+                if (square) {
+                    if (currentBoard[r][f]) {
+                        square.classList.add('possible-capture');
+                    } else {
+                        square.classList.add('possible-move');
+                    }
+                }
+            });
+        }
+
+        function getValidMoves(rank, file, piece) {
+            const moves = [];
+            const pieceType = piece.toLowerCase();
+            
+            switch (pieceType) {
+                case 'p':
+                    moves.push(...getPawnMoves(rank, file, piece));
+                    break;
+                case 'r':
+                    moves.push(...getRookMoves(rank, file));
+                    break;
+                case 'n':
+                    moves.push(...getKnightMoves(rank, file));
+                    break;
+                case 'b':
+                    moves.push(...getBishopMoves(rank, file));
+                    break;
+                case 'q':
+                    moves.push(...getQueenMoves(rank, file));
+                    break;
+                case 'k':
+                    moves.push(...getKingMoves(rank, file));
+                    break;
+            }
+            
+            return moves.filter(([r, f]) => {
+                return r >= 0 && r < 8 && f >= 0 && f < 8 && 
+                       (!currentBoard[r][f] || isOpponentPiece(currentBoard[r][f], piece));
+            });
+        }
+
+        function getPawnMoves(rank, file, piece) {
+            const moves = [];
+            const isWhite = piece === piece.toUpperCase();
+            const direction = isWhite ? -1 : 1;
+            const startRank = isWhite ? 6 : 1;
+            
+            // Forward moves
+            if (!currentBoard[rank + direction] || !currentBoard[rank + direction][file]) {
+                moves.push([rank + direction, file]);
+                
+                // Double move from starting position
+                if (rank === startRank && (!currentBoard[rank + 2 * direction] || !currentBoard[rank + 2 * direction][file])) {
+                    moves.push([rank + 2 * direction, file]);
+                }
+            }
+            
+            // Captures
+            if (file > 0 && currentBoard[rank + direction] && currentBoard[rank + direction][file - 1] && 
+                isOpponentPiece(currentBoard[rank + direction][file - 1], piece)) {
+                moves.push([rank + direction, file - 1]);
+            }
+            if (file < 7 && currentBoard[rank + direction] && currentBoard[rank + direction][file + 1] && 
+                isOpponentPiece(currentBoard[rank + direction][file + 1], piece)) {
+                moves.push([rank + direction, file + 1]);
+            }
+            
+            return moves;
+        }
+
+        function getRookMoves(rank, file) {
+            const moves = [];
+            const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+            
+            directions.forEach(([dr, df]) => {
+                for (let i = 1; i < 8; i++) {
+                    const newRank = rank + dr * i;
+                    const newFile = file + df * i;
+                    
+                    if (newRank < 0 || newRank >= 8 || newFile < 0 || newFile >= 8) break;
+                    if (currentBoard[newRank][newFile]) {
+                        if (isOpponentPiece(currentBoard[newRank][newFile], currentBoard[rank][file])) {
+                            moves.push([newRank, newFile]);
+                        }
+                        break;
+                    }
+                    moves.push([newRank, newFile]);
+                }
+            });
+            
+            return moves;
+        }
+
+        function getKnightMoves(rank, file) {
+            const moves = [];
+            const knightMoves = [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]];
+            
+            knightMoves.forEach(([dr, df]) => {
+                const newRank = rank + dr;
+                const newFile = file + df;
+                if (newRank >= 0 && newRank < 8 && newFile >= 0 && newFile < 8) {
+                    moves.push([newRank, newFile]);
+                }
+            });
+            
+            return moves;
+        }
+
+        function getBishopMoves(rank, file) {
+            const moves = [];
+            const directions = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+            
+            directions.forEach(([dr, df]) => {
+                for (let i = 1; i < 8; i++) {
+                    const newRank = rank + dr * i;
+                    const newFile = file + df * i;
+                    
+                    if (newRank < 0 || newRank >= 8 || newFile < 0 || newFile >= 8) break;
+                    if (currentBoard[newRank][newFile]) {
+                        if (isOpponentPiece(currentBoard[newRank][newFile], currentBoard[rank][file])) {
+                            moves.push([newRank, newFile]);
+                        }
+                        break;
+                    }
+                    moves.push([newRank, newFile]);
+                }
+            });
+            
+            return moves;
+        }
+
+        function getQueenMoves(rank, file) {
+            return [...getRookMoves(rank, file), ...getBishopMoves(rank, file)];
+        }
+
+        function getKingMoves(rank, file) {
+            const moves = [];
+            const directions = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+            
+            directions.forEach(([dr, df]) => {
+                const newRank = rank + dr;
+                const newFile = file + df;
+                if (newRank >= 0 && newRank < 8 && newFile >= 0 && newFile < 8) {
+                    moves.push([newRank, newFile]);
+                }
+            });
+            
+            return moves;
+        }
+
+        function isOpponentPiece(piece1, piece2) {
+            return (piece1 === piece1.toUpperCase()) !== (piece2 === piece2.toUpperCase());
+        }
+
+        function isValidMove(fromRank, fromFile, toRank, toFile) {
+            const piece = currentBoard[fromRank][fromFile];
+            const validMoves = getValidMoves(fromRank, fromFile, piece);
+            return validMoves.some(([r, f]) => r === toRank && f === toFile);
+        }
+
+        function makeMove(fromRank, fromFile, toRank, toFile) {
+            const piece = currentBoard[fromRank][fromFile];
+            const capturedPiece = currentBoard[toRank][toFile];
+            
+            // Handle pawn promotion
+            if (piece.toLowerCase() === 'p' && (toRank === 0 || toRank === 7)) {
+                const promotionPiece = piece === piece.toUpperCase() ? 'Q' : 'q';
+                currentBoard[toRank][toFile] = promotionPiece;
+            } else {
+                currentBoard[toRank][toFile] = piece;
+            }
+            
+            currentBoard[fromRank][fromFile] = '';
+            
+            updateBoardDisplay();
+            
+            // Create move notation
+            const moveNotation = createMoveNotation(piece, fromRank, fromFile, toRank, toFile, capturedPiece);
+            moveHistory.push(moveNotation);
+            updateMoveHistory();
+            
+            moveCount++;
+            document.getElementById('move-counter').textContent = Math.ceil(moveCount / 2);
+        }
+
+        function createMoveNotation(piece, fromRank, fromFile, toRank, toFile, capturedPiece) {
+            const pieceSymbol = piece.toUpperCase() === 'P' ? '' : piece.toUpperCase();
+            const fromSquare = String.fromCharCode(97 + fromFile) + (8 - fromRank);
+            const toSquare = String.fromCharCode(97 + toFile) + (8 - toRank);
+            const capture = capturedPiece ? 'x' : '';
+            
+            return `${pieceSymbol}${capture}${toSquare}`;
+        }
+
+        function updateBoardDisplay() {
+            const squares = document.querySelectorAll('#chess-board .chess-square');
+            squares.forEach((square, index) => {
+                const rank = Math.floor(index / 8);
+                const file = index % 8;
+                const piece = currentBoard[rank][file];
+                square.textContent = piece ? pieces[piece] : '';
+            });
+        }
+
+        function updateMoveHistory() {
+            const historyDiv = document.getElementById('move-history');
+            if (moveHistory.length === 0) {
+                historyDiv.innerHTML = '<p class="text-gray-500 italic">No moves yet...</p>';
+            } else {
+                historyDiv.innerHTML = moveHistory.map((move, index) => 
+                    `<span class="inline-block mr-2">${Math.ceil((index + 1) / 2)}${index % 2 === 0 ? '.' : '...'} ${move}</span>`
+                ).join('');
+            }
+        }
+
+        async function submitSolution() {
+            if (!currentPuzzle || !currentUser) return;
+            
+            clearInterval(timerInterval);
+            const solveTime = Math.floor((Date.now() - startTime) / 1000);
+            
+            canMove = false;
+            gameState = 'submitted';
+            document.getElementById('game-status').textContent = 'Checking solution...';
+            document.getElementById('submit-btn').classList.add('hidden');
+            
+            try {
+                // Get the correct solution from database
+                const correctSolution = await getCorrectSolution(currentPuzzle.title);
+                
+                if (!correctSolution) {
+                    alert('No solution found for this puzzle. Please contact admin.');
+                    return;
+                }
+                
+                // Verify the solution
+                const isCorrect = verifySolution(moveHistory, correctSolution);
+                
+                if (!isCorrect) {
+                    document.getElementById('game-status').textContent = 'Incorrect solution. Try again!';
+                    document.getElementById('solve-btn').classList.remove('hidden');
+                    canMove = true;
+                    gameState = 'playing';
+                    startTime = Date.now();
+                    timerInterval = setInterval(updateTimer, 1000);
+                    return;
+                }
+                
+                // Calculate rank based on time
+                const rank = calculateRank(solveTime);
+                
+                // Save solution to database
+                await db.collection('solutions').add({
+                    userId: currentUser.uid,
+                    puzzleId: currentPuzzle.id,
+                    moves: moveHistory,
+                    timeSeconds: solveTime,
+                    rank: rank,
+                    correct: true,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                // Update user stats
+                const userRef = db.collection('users').doc(currentUser.uid);
+                await userRef.update({
+                    solvedPuzzles: firebase.firestore.FieldValue.increment(1),
+                    totalTime: firebase.firestore.FieldValue.increment(solveTime)
+                });
+                
+                document.getElementById('game-status').textContent = 'Correct solution!';
+                displayRank(rank, solveTime);
+            } catch (error) {
+                console.error('Error saving solution:', error);
+                alert('Error saving solution. Please try again.');
+            }
+        }
+
+        async function getCorrectSolution(puzzleTitle) {
+            try {
+                const solutionDoc = await db.collection('solutions').doc(puzzleTitle).get();
+                if (solutionDoc.exists) {
+                    return solutionDoc.data().solution;
+                }
+                return null;
+            } catch (error) {
+                console.error('Error getting correct solution:', error);
+                return null;
+            }
+        }
+
+        function verifySolution(userMoves, correctSolution) {
+            // Convert both solutions to comparable format
+            const userMovesStr = userMoves.join(' ').toLowerCase().replace(/[+#]/g, '');
+            const correctMovesStr = correctSolution.join(' ').toLowerCase().replace(/[+#]/g, '');
+            
+            // Check if user moves match the beginning of correct solution
+            return correctMovesStr.startsWith(userMovesStr) || userMovesStr === correctMovesStr;
+        }
+
+        function calculateRank(timeSeconds) {
+            if (timeSeconds <= 30) return 'Grandmaster';
+            if (timeSeconds <= 60) return 'Master';
+            if (timeSeconds <= 120) return 'Expert';
+            if (timeSeconds <= 300) return 'Advanced';
+            if (timeSeconds <= 600) return 'Intermediate';
+            return 'Beginner';
+        }
+
+        function displayRank(rank, timeSeconds) {
+            const rankSection = document.getElementById('rankings-section');
+            const userRankDiv = document.getElementById('user-rank');
+            
+            const rankClass = `rank-${rank.toLowerCase()}`;
+            const minutes = Math.floor(timeSeconds / 60);
+            const seconds = timeSeconds % 60;
+            const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+            
+            userRankDiv.innerHTML = `
+                <div class="mb-4">
+                    <div class="text-2xl font-bold text-gray-800 mb-2">Puzzle Completed!</div>
+                    <div class="text-lg text-gray-600">Time: ${timeStr}</div>
+                </div>
+                <div class="rank-badge ${rankClass} text-lg">
+                    ${rank}
+                </div>
+                <div class="mt-4 text-sm text-gray-600">
+                    ${getRankDescription(rank)}
+                </div>
+            `;
+            
+            rankSection.style.display = 'block';
+        }
+
+        function getRankDescription(rank) {
+            const descriptions = {
+                'Grandmaster': 'Exceptional! Lightning-fast solution.',
+                'Master': 'Excellent! Very quick thinking.',
+                'Expert': 'Great job! Solid performance.',
+                'Advanced': 'Good work! Keep practicing.',
+                'Intermediate': 'Nice effort! Room for improvement.',
+                'Beginner': 'Good start! Practice makes perfect.'
+            };
+            return descriptions[rank] || 'Well done!';
+        }
+
+        function resetPuzzle() {
+            if (currentPuzzle) {
+                clearInterval(timerInterval);
+                loadPuzzle(currentPuzzle);
+            }
+        }
+
+        // Admin functions
+        function checkAdminPassword() {
+            const password = document.getElementById('admin-password').value;
+            if (password === 'chessclub@rkv') {
+                document.getElementById('admin-check').classList.add('hidden');
+                document.getElementById('create-form').classList.remove('hidden');
+            } else {
+                alert('Incorrect admin password!');
+            }
+        }
+
+        function previewPuzzle() {
+            const fen = document.getElementById('new-fen').value;
+            const title = document.getElementById('new-title').value;
+            const description = document.getElementById('new-description').value;
+            
+            if (fen) {
+                createBoard('preview-board', fen);
+                document.getElementById('preview-info').innerHTML = `
+                    <h4 class="font-medium text-gray-800">${title || 'Untitled Puzzle'}</h4>
+                    <p class="text-sm text-gray-600 mt-1">${description || 'No description provided'}</p>
+                `;
+            } else {
+                alert('Please enter a FEN position to preview the puzzle.');
+            }
+        }
+
+        async function savePuzzle() {
+            const title = document.getElementById('new-title').value;
+            const description = document.getElementById('new-description').value;
+            const theme = document.getElementById('new-theme').value;
+            const difficulty = document.getElementById('new-difficulty').value;
+            const fen = document.getElementById('new-fen').value;
+            const solutionInput = document.getElementById('new-solution').value;
+            
+            if (!title || !description || !fen || !solutionInput) {
+                alert('Please fill in all required fields.');
+                return;
+            }
+            
+            try {
+                // Save puzzle
+                await db.collection('puzzles').add({
+                    title,
+                    description,
+                    theme,
+                    difficulty,
+                    fen,
+                    rating: Math.floor(Math.random() * 1000) + 1200,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    createdBy: currentUser.uid
+                });
+                
+                // Save solution with puzzle title as document ID
+                const solution = solutionInput.trim().split(/\s+/);
+                await db.collection('solutions').doc(title).set({
+                    solution: solution,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    createdBy: currentUser.uid
+                });
+                
+                document.getElementById('puzzle-form').reset();
+                createBoard('preview-board');
+                document.getElementById('preview-info').innerHTML = '<p>Set up your puzzle and click Preview to see it here.</p>';
+                
+                alert('Puzzle and solution saved successfully! 🎉');
+                loadPuzzles(); // Refresh puzzle list
+            } catch (error) {
+                console.error('Error saving puzzle:', error);
+                alert('Error saving puzzle. Please try again.');
+            }
+        }
+
+        // Initialize preview board
+        function initPreviewBoard() {
+            createBoard('preview-board');
+        }
+
+        // Initialize the application
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                currentUser = user;
+                loadUserData();
+                showMainApp();
+            } else {
+                document.getElementById('auth-modal').classList.remove('hidden');
+                document.getElementById('main-app').classList.add('hidden');
+            }
+        });
+
+        // Initialize preview board when page loads
+        window.addEventListener('DOMContentLoaded', () => {
+            initPreviewBoard();
+        });
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'977a8ccb67723f42',t:'MTc1NjYyMjU2OC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
