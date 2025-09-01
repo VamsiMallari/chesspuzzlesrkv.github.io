@@ -1,31 +1,48 @@
-name: Daily Chess Puzzle Upload
+name: Upload Daily Puzzle
 
 on:
   schedule:
-    - cron: "0 6 * * *"
-  workflow_dispatch:
+    # 05:30 UTC every day – adjust as you like
+    - cron: "30 5 * * *"
+  workflow_dispatch: {}   # allow manual re-run from Actions tab
+
+permissions:
+  contents: read
 
 jobs:
   upload:
     runs-on: ubuntu-latest
-    env:
-      FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
+
     steps:
-      - name: Checkout repository
-      - uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-
-      - name: Install Stockfish
-        run: sudo apt-get update && sudo apt-get install -y stockfish
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install firebase-admin requests python-chess stockfish
+          python -m pip install --upgrade pip
+          pip install firebase-admin requests python-chess
 
-      - name: Run uploader
-        run: python upload_puzzle.py
+      - name: Write Firebase credentials from secret
+        env:
+          FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
+        run: |
+          python - <<'PY'
+          import os, base64, sys
+          b64 = os.environ.get("FIREBASE_CREDENTIALS")
+          if not b64:
+            print("FIREBASE_CREDENTIALS not set", file=sys.stderr)
+            sys.exit(1)
+          open("firebase_credentials.json","wb").write(base64.b64decode(b64))
+          print("firebase_credentials.json written")
+          PY
+
+      - name: Upload puzzle
+        env:
+          FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
+        run: |
+          python upload_puzzle.py
